@@ -1,9 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>CH Subway Runner</title>
   <style>
-    body { margin:0; overflow:hidden; font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { 
+        margin:0; overflow:hidden; 
+        font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        background-color: #000;
+        /* CRITICAL FIX: Stops the browser from delaying touches */
+        touch-action: none; 
+        -webkit-touch-callout: none;
+        user-select: none;
+    }
 
     /* UI Styling */
     #menu, #gameover {
@@ -17,7 +27,7 @@
     }
     #gameover { display:none; }
 
-    h1 { font-size: 50px; font-weight: 900; transform: skew(-10deg); color: #ffeb3b; -webkit-text-stroke: 2px #d32f2f; margin-bottom: 20px;}
+    h1 { font-size: 50px; font-weight: 900; transform: skew(-10deg); color: #ffeb3b; -webkit-text-stroke: 2px #d32f2f; margin-bottom: 20px; text-align: center; }
     
     button {
       padding:15px 40px;
@@ -91,6 +101,24 @@
 let scene, camera, renderer;
 let player;
 
+/* ===== OPTIMIZATION: REUSABLE OBJECTS ===== */
+// Creating these once prevents the "Lag Spikes" seen in your video
+const trainGeometry = new THREE.BoxGeometry(2.4, 3, 10);
+const barrierGeometry = new THREE.BoxGeometry(2.2, 1.2, 0.5);
+const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 2.5, 8);
+const lightGeometry = new THREE.BoxGeometry(0.5, 0.2, 0.1);
+
+// Pre-create materials
+const matBlue = new THREE.MeshLambertMaterial({color: 0x1565c0}); 
+const matRed = new THREE.MeshLambertMaterial({color: 0xc62828});
+const matBarrier = new THREE.MeshLambertMaterial({color: 0x8d6e63});
+const matWheel = new THREE.MeshLambertMaterial({color: 0x111111});
+const matLight = new THREE.MeshBasicMaterial({color: 0xffff00});
+
+// Rotate wheel geometry once globally
+wheelGeometry.rotateZ(Math.PI/2);
+
+
 /* ===== AUDIO SYSTEM ===== */
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let musicScheduler = null;
@@ -106,6 +134,7 @@ const melody = [
 const bassNotes = [131, 147, 165, 131, 123, 110, 123, 131];
 
 function playFunNote(freq, duration=180, volume=0.15, type="sawtooth"){
+  if(audioCtx.state === 'suspended') audioCtx.resume();
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   osc.frequency.value = freq;
@@ -189,7 +218,6 @@ let buildings = [];
 
 let score = 0;
 let highScore = Number(localStorage.getItem("runnerHighScore")) || 0;
-// Initialize highscore text immediately
 document.getElementById("hiScoreVal").innerText = highScore;
 
 let started=false, paused=false, countingDown=false;
@@ -201,7 +229,8 @@ function createTrackTexture() {
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#8d6e63'; 
     ctx.fillRect(0,0,512,512);
-    for(let i=0; i<1000; i++) {
+    // Optimized: Reduced particle count slightly for texture generation speed
+    for(let i=0; i<400; i++) {
         ctx.fillStyle = Math.random() > 0.5 ? '#6d4c41' : '#a1887f';
         ctx.fillRect(Math.random()*512, Math.random()*512, 4, 4);
     }
@@ -224,6 +253,7 @@ const trackTexture = createTrackTexture();
 
 /* ================= INIT ================= */
 function startGame(){
+  if(audioCtx.state === 'suspended') audioCtx.resume();
   document.getElementById("menu").style.display="none";
   countingDown=true;
   const cd=document.getElementById("countdown");
@@ -262,9 +292,15 @@ function init(){
   camera.position.set(0, 5, 11);
   camera.rotation.x = -0.2;
 
-  renderer = new THREE.WebGLRenderer({antialias:true});
+  // OPTIMIZATION: High Performance Mode
+  renderer = new THREE.WebGLRenderer({antialias:true, powerPreference: "high-performance"});
+  
+  // OPTIMIZATION: Cap Pixel Ratio to 2 (Fixes lag on High DPI phones)
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer, nicer shadows
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   document.body.appendChild(renderer.domElement);
 
@@ -274,6 +310,9 @@ function init(){
   const dirLight = new THREE.DirectionalLight(0xffd54f, 1.2); 
   dirLight.position.set(20, 50, 20);
   dirLight.castShadow = true;
+  // Optimized Shadow Camera
+  dirLight.shadow.mapSize.width = 1024;
+  dirLight.shadow.mapSize.height = 1024;
   dirLight.shadow.camera.left = -20;
   dirLight.shadow.camera.right = 20;
   dirLight.shadow.camera.top = 20;
@@ -286,6 +325,13 @@ function init(){
 
   setInterval(spawnObstacle, 500);
   setupControls();
+  
+  // Handle resize to prevent distortion
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
 }
 
 function createPlayer(){
@@ -333,11 +379,12 @@ function createRoad(){
   ground.position.z = -100;
   scene.add(ground);
 
+  // Reusable geometry for road segments
+  const roadGeo = new THREE.PlaneGeometry(12, 50);
+  const roadMat = new THREE.MeshStandardMaterial({ map: trackTexture });
+
   for(let i=0;i<8;i++){
-    const piece = new THREE.Mesh(
-      new THREE.PlaneGeometry(12, 50),
-      new THREE.MeshStandardMaterial({ map: trackTexture })
-    );
+    const piece = new THREE.Mesh(roadGeo, roadMat);
     piece.rotation.x = -Math.PI/2;
     piece.position.z = -i*50;
     piece.receiveShadow = true;
@@ -347,13 +394,19 @@ function createRoad(){
 }
 
 function createBuildings(){
-  const palette = ["#4fc3f7", "#ff8a65", "#ba68c8", "#ffb74d", "#81c784"];
+  const palette = [0x4fc3f7, 0xff8a65, 0xba68c8, 0xffb74d, 0x81c784];
+  const materials = palette.map(c => new THREE.MeshToonMaterial({ color: c }));
+  const geom = new THREE.BoxGeometry(1,1,1); // Base geometry to be scaled
+
   for(let i=0;i<50;i++){
     const h = Math.random()*10 + 10;
     const w = Math.random()*3 + 3;
-    const color = palette[Math.floor(Math.random()*palette.length)];
-    const mat = new THREE.MeshToonMaterial({ color: color });
-    const b = new THREE.Mesh(new THREE.BoxGeometry(w,h,w), mat);
+    const mat = materials[Math.floor(Math.random()*materials.length)];
+    
+    // Create mesh but re-use materials
+    const b = new THREE.Mesh(geom, mat);
+    b.scale.set(w, h, w); // Scale instead of new Geometry
+    
     const xPos = Math.random()>0.5 ? (9 + Math.random()*5) : (-9 - Math.random()*5);
     b.position.set(xPos, h/2, -i*10);
     b.castShadow = true;
@@ -364,7 +417,7 @@ function createBuildings(){
 
 function setupControls(){
   let sx=0, sy=0;
-  window.addEventListener("touchstart",e=>{ sx=e.touches[0].clientX; sy=e.touches[0].clientY; });
+  window.addEventListener("touchstart",e=>{ sx=e.touches[0].clientX; sy=e.touches[0].clientY; }, {passive: false});
   window.addEventListener("touchend",e=>{
     if(!started) return;
     let dx=e.changedTouches[0].clientX-sx;
@@ -375,7 +428,7 @@ function setupControls(){
       if(dy<-30){ jump(); playJumpSound(); }
       if(dy>30) fastFall=true;
     }
-  });
+  }, {passive: false});
   window.addEventListener("keydown", e=>{
       if(!started) return;
       if(e.key==="ArrowLeft") currentLane=Math.max(0,currentLane-1);
@@ -396,16 +449,17 @@ function spawnObstacle(){
   if(!started) return;
   const type = Math.random(); 
   const isTrain = type > 0.5;
-  let geo, mat, yPos;
-  
+  let obs;
+  let yPos;
+
+  // OPTIMIZATION: Reusing Global Geometries & Materials
+  // This removes the "Garbage Collection" stutter
   if(isTrain) {
-      geo = new THREE.BoxGeometry(2.4, 3, 10);
-      const col = Math.random()>0.5 ? 0x1565c0 : 0xc62828;
-      mat = new THREE.MeshStandardMaterial({color: col, roughness: 0.2});
+      const isBlue = Math.random() > 0.5;
+      obs = new THREE.Mesh(trainGeometry, isBlue ? matBlue : matRed);
       yPos = 1.5; 
   } else {
-      geo = new THREE.BoxGeometry(2.2, 1.2, 0.5);
-      mat = new THREE.MeshStandardMaterial({color: 0x8d6e63});
+      obs = new THREE.Mesh(barrierGeometry, matBarrier);
       yPos = 0.6;
   }
 
@@ -417,23 +471,24 @@ function spawnObstacle(){
 
   pattern.forEach((v,i)=>{
     if(v){
-      const obs = new THREE.Mesh(geo,mat);
-      obs.position.set(lanes[i], yPos, -150);
-      obs.castShadow = true;
-      obs.isTrain = isTrain; 
-      scene.add(obs);
-      obstacles.push(obs);
+      // Clone if we need multiple in one spawn (rare but safe here since geometry is shared)
+      const instance = obs.clone(); 
+      instance.position.set(lanes[i], yPos, -150);
+      instance.castShadow = true;
+      instance.isTrain = isTrain; 
+      scene.add(instance);
+      obstacles.push(instance);
+      
       if(isTrain){
-          const l1 = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.2,0.1), new THREE.MeshBasicMaterial({color:0xffff00}));
+          // Add details using shared geometries
+          const l1 = new THREE.Mesh(lightGeometry, matLight);
           l1.position.set(0.6,-1,5);
           const l2 = l1.clone(); l2.position.set(-0.6,-1,5);
-          obs.add(l1); obs.add(l2);
-          const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 2.5, 8);
-          const wheelMat = new THREE.MeshStandardMaterial({color:0x111111});
-          wheelGeo.rotateZ(Math.PI/2);
-          const w1 = new THREE.Mesh(wheelGeo, wheelMat); w1.position.set(0, -1.5, 3);
-          const w2 = new THREE.Mesh(wheelGeo, wheelMat); w2.position.set(0, -1.5, -3);
-          obs.add(w1); obs.add(w2);
+          instance.add(l1); instance.add(l2);
+
+          const w1 = new THREE.Mesh(wheelGeometry, matWheel); w1.position.set(0, -1.5, 3);
+          const w2 = w1.clone(); w2.position.set(0, -1.5, -3);
+          instance.add(w1); instance.add(w2);
       }
     }
   });
@@ -512,7 +567,6 @@ function animate(){
   if(score > highScore){ 
     highScore = score; 
     localStorage.setItem("runnerHighScore", highScore); 
-    // Update UI immediately when highscore is broken
     document.getElementById("hiScoreVal").innerText = highScore;
   }
   
