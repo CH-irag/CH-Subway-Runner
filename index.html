@@ -3,24 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>CH Subway Runner</title>
+  <title>CH Subway Runner - Pro Mode</title>
   <style>
     body { 
         margin:0; overflow:hidden; 
         font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
         background-color: #000;
-        /* CRITICAL FIX: Stops the browser from delaying touches */
         touch-action: none; 
         -webkit-touch-callout: none;
         user-select: none;
     }
 
-    /* UI Styling */
     #menu, #gameover {
       position:absolute; inset:0;
       display:flex; flex-direction:column;
       justify-content:center; align-items:center;
-      background: radial-gradient(circle, rgba(255,200,220,0.95) 0%, rgba(100,50,150,0.95) 100%);
+      background: radial-gradient(circle, rgba(20,20,30,0.95) 0%, rgba(0,0,0,0.98) 100%);
       z-index:10;
       color: white;
       text-shadow: 2px 2px 0 #000;
@@ -30,64 +28,51 @@
     h1 { font-size: 50px; font-weight: 900; transform: skew(-10deg); color: #ffeb3b; -webkit-text-stroke: 2px #d32f2f; margin-bottom: 20px; text-align: center; }
     
     button {
-      padding:15px 40px;
-      border:none; border-radius:30px;
+      padding:15px 40px; border:none; border-radius:30px;
       font-size:24px; font-weight: bold;
       background: linear-gradient(#42a5f5, #1e88e5);
-      color: white;
-      cursor: pointer;
+      color: white; cursor: pointer;
       box-shadow: 0 6px 0 #0d47a1, 0 10px 10px rgba(0,0,0,0.3);
       transition: transform 0.1s;
     }
     button:active { transform: translateY(4px); box-shadow: 0 2px 0 #0d47a1; }
 
-    /* Updated Score Box to fit Highscore */
     #scoreContainer {
-      position:absolute; top:20px; right:20px; left: auto;
-      text-align: right;
-      z-index:5;
+      display: none;
+      position:absolute; top:20px; right:20px;
+      text-align: right; z-index:5;
       background: rgba(0,0,0,0.4);
-      padding: 10px 20px;
-      border-radius: 20px;
-      border: 3px solid white;
+      padding: 10px 20px; border-radius: 20px; border: 3px solid white;
       min-width: 120px;
     }
-    #score {
-      font-size:28px; font-weight: 800; color: #ffeb3b;
-      text-shadow: 2px 2px 0 #000;
-    }
-    #highScoreDisplay {
-      font-size:16px; font-weight: 700; color: #ffffff;
-      margin-top: -5px;
-    }
+    #score { font-size:28px; font-weight: 800; color: #ffeb3b; text-shadow: 2px 2px 0 #000; }
+    #highScoreDisplay { font-size:16px; font-weight: 700; color: #ffffff; margin-top: -5px; }
 
     #countdown {
       position:absolute; inset:0;
       display:none; justify-content:center; align-items:center;
       font-size:120px; font-weight:900;
       color:#ffeb3b; -webkit-text-stroke: 4px #d32f2f;
-      text-shadow: 5px 5px 0px #000;
-      z-index:9;
+      text-shadow: 5px 5px 0px #000; z-index:9;
     }
-    
     p { font-size: 18px; color: white; font-weight: bold; margin-top: 20px;}
   </style>
 </head>
 <body>
 
 <div id="menu">
-  <h1>🚄 CH SUBWAY RUNNER</h1>
-  <button onclick="startGame()">TAP TO PLAY</button>
+  <h1>🏃 SUBWAY CHAOS</h1>
+  <button onclick="startGame()">TAP TO RUN</button>
   <p>⬅️➡️ Move • ⬆️ Jump • ⬇️ Roll</p>
 </div>
 
 <div id="countdown"></div>
 
 <div id="gameover">
-  <h1 style="color:#ff5252">CRASHED!</h1>
+  <h1 style="color:#ff5252">WIPEOUT!</h1>
   <h2 id="finalScore"></h2>
   <h3 id="finalBest" style="margin-bottom:20px; color:#ffeb3b"></h3>
-  <button onclick="location.reload()">PLAY AGAIN</button>
+  <button onclick="location.reload()">TRY AGAIN</button>
 </div>
 
 <div id="scoreContainer">
@@ -99,159 +84,111 @@
 
 <script>
 let scene, camera, renderer;
-let player;
+let player, playerParts = {}; 
 
-/* ===== OPTIMIZATION: REUSABLE OBJECTS ===== */
-// Creating these once prevents the "Lag Spikes" seen in your video
-const trainGeometry = new THREE.BoxGeometry(2.4, 3, 10);
-const barrierGeometry = new THREE.BoxGeometry(2.2, 1.2, 0.5);
-const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 2.5, 8);
+/* ===== ASSETS ===== */
+const trainGeometry = new THREE.BoxGeometry(2.6, 3.0, 14);
+const barrierGeometry = new THREE.BoxGeometry(2.2, 1.2, 0.4);
+const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 2.5, 16);
 const lightGeometry = new THREE.BoxGeometry(0.5, 0.2, 0.1);
 
-// Pre-create materials
-const matBlue = new THREE.MeshLambertMaterial({color: 0x1565c0}); 
-const matRed = new THREE.MeshLambertMaterial({color: 0xc62828});
-const matBarrier = new THREE.MeshLambertMaterial({color: 0x8d6e63});
-const matWheel = new THREE.MeshLambertMaterial({color: 0x111111});
-const matLight = new THREE.MeshBasicMaterial({color: 0xffff00});
+// Ramps and Boxes
+const yellowBarrierGeo = new THREE.BoxGeometry(2.2, 1.0, 0.3); 
+const poleGeo = new THREE.CylinderGeometry(0.15, 0.15, 7, 8); 
+const trafficBoxGeo = new THREE.BoxGeometry(0.6, 1.2, 0.5); 
+const rampBoxGeo = new THREE.BoxGeometry(2.4, 1.8, 3.0); 
 
-// Rotate wheel geometry once globally
+// Materials
+const matBlue = new THREE.MeshStandardMaterial({color: 0x1565c0, roughness: 0.2}); 
+const matRed = new THREE.MeshStandardMaterial({color: 0xc62828, roughness: 0.2});
+const matBarrier = new THREE.MeshStandardMaterial({color: 0x8d6e63});
+const matWheel = new THREE.MeshStandardMaterial({color: 0x111111});
+const matLight = new THREE.MeshBasicMaterial({color: 0xffff00});
+const matYellow = new THREE.MeshStandardMaterial({color: 0xffea00}); 
+const matGrey = new THREE.MeshStandardMaterial({color: 0x607d8b});     
+const matRamp = new THREE.MeshStandardMaterial({color: 0x5d4037, map: null}); 
+
 wheelGeometry.rotateZ(Math.PI/2);
 
-
-/* ===== AUDIO SYSTEM ===== */
+/* ===== AUDIO ===== */
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let musicScheduler = null;
 let isPlayingMusic = false;
-let baseInterval = 220; 
 
-const melody = [
-  523, 587, 659, 523, 494, 440, 494, 523,
-  659, 587, 523, 494, 440, 392, 440, 494,
-  784, 659, 587, 523, 494, 440, 392, 440,
-  262, 294, 330, 262, 247, 220, 247, 262
-];
-const bassNotes = [131, 147, 165, 131, 123, 110, 123, 131];
+const melody = [523, 587, 659, 523, 494, 440, 494, 523, 659, 587, 523, 494, 440, 392, 440, 494];
+const bassNotes = [131, 147, 165, 131];
 
-function playFunNote(freq, duration=180, volume=0.15, type="sawtooth"){
+function playTone(freq, duration, type="sawtooth", vol=0.1){
   if(audioCtx.state === 'suspended') audioCtx.resume();
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
-  osc.frequency.value = freq;
-  osc.type = type;
-  gain.gain.setValueAtTime(0, audioCtx.currentTime);
-  gain.gain.linearRampToValueAtTime(volume, audioCtx.currentTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration/1000);
-  const filter = audioCtx.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.frequency.value = 1200;
-  osc.connect(filter);
-  filter.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + duration/1000);
-}
-
-function playBass(freq, duration=250, volume=0.12){
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.frequency.value = freq;
-  osc.type = "triangle";
-  gain.gain.setValueAtTime(volume*0.8, audioCtx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration/1000);
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + duration/1000);
-}
-
-function getCurrentMusicInterval(){
-  const speedFactor = worldSpeed / maxSpeed;
-  const musicSpeedup = speedFactor * 80;
-  return Math.max(baseInterval - musicSpeedup, 120);
+  osc.frequency.value = freq; osc.type = type;
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + duration);
 }
 
 function startFunMusic(){
   if(isPlayingMusic) return;
   isPlayingMusic = true;
-  let melodyIndex = 0;
-  let bassIndex = 0;
-  function musicLoop(){
+  let idx = 0;
+  function loop(){
     if(!isPlayingMusic) return;
-    const note = melody[melodyIndex % melody.length];
-    playFunNote(note, 200);
-    if(melodyIndex % 4 === 0){
-      const bass = bassNotes[bassIndex % bassNotes.length];
-      playBass(bass, 300);
-    }
-    melodyIndex++;
-    if(melodyIndex % 8 === 0) bassIndex++;
-    const nextInterval = getCurrentMusicInterval();
-    musicScheduler = setTimeout(musicLoop, nextInterval);
+    playTone(melody[idx%melody.length], 0.15, "square", 0.05);
+    if(idx%4===0) playTone(bassNotes[(idx/4)%bassNotes.length], 0.3, "triangle", 0.1);
+    idx++;
+    // Music gets faster as world speed increases
+    musicScheduler = setTimeout(loop, Math.max(100, 220 - (worldSpeed*60)));
   }
-  musicLoop();
+  loop();
 }
-
-function stopFunMusic(){
-  isPlayingMusic = false;
-  if(musicScheduler){ clearTimeout(musicScheduler); musicScheduler = null; }
-}
-
-function playJumpSound(){ playFunNote(659, 100, 0.25, "square"); }
-function playHitSound(){ playFunNote(196, 300, 0.3, "sawtooth"); }
+function stopFunMusic(){ isPlayingMusic = false; clearTimeout(musicScheduler); }
+function playJumpSound(){ playTone(600, 0.1, "sine", 0.2); playTone(800, 0.2, "sine", 0.1); }
+function playHitSound(){ playTone(150, 0.4, "sawtooth", 0.3); }
 
 /* ===== GAME VARIABLES ===== */
 const lanes = [-2.5, 0, 2.5];
 let currentLane = 1;
-
 let worldSpeed = 0.45;
-const maxSpeed = 1.8;
-
-let gravity = -0.022; 
+const maxSpeed = 2.4; // Slightly faster max speed
+let gravity = -0.024; 
 let velY = 0;
 let jumping = false;
 let fastFall = false;
-
 let obstacles = [];
 let roadPieces = [];
 let buildings = [];
-
+let decorations = []; 
 let score = 0;
 let highScore = Number(localStorage.getItem("runnerHighScore")) || 0;
 document.getElementById("hiScoreVal").innerText = highScore;
-
 let started=false, paused=false, countingDown=false;
 
-/* ================= TEXTURES ================= */
+// Animation & Spawning Control
+let runAnimTime = 0;
+let spawnAccumulator = 0; 
+let nextSpawnDistance = 50; 
+
+/* ================= INIT ================= */
 function createTrackTexture() {
     const canvas = document.createElement('canvas');
     canvas.width = 512; canvas.height = 512;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#8d6e63'; 
-    ctx.fillRect(0,0,512,512);
-    // Optimized: Reduced particle count slightly for texture generation speed
-    for(let i=0; i<400; i++) {
-        ctx.fillStyle = Math.random() > 0.5 ? '#6d4c41' : '#a1887f';
-        ctx.fillRect(Math.random()*512, Math.random()*512, 4, 4);
-    }
+    ctx.fillStyle = '#6d4c41'; ctx.fillRect(0,0,512,512);
+    ctx.fillStyle = '#5d4037';
+    for(let i=0; i<1000; i++) ctx.fillRect(Math.random()*512, Math.random()*512, 3, 3);
     const centers = [106, 256, 406]; 
-    ctx.fillStyle = '#4e342e';
-    for(let y=0; y<512; y+=40) {
-        centers.forEach(x => { ctx.fillRect(x - 50, y, 100, 15); });
-    }
-    ctx.fillStyle = '#b0bec5'; 
-    centers.forEach(x => {
-        ctx.fillRect(x - 35, 0, 8, 512);
-        ctx.fillRect(x + 27, 0, 8, 512);
-    });
+    ctx.fillStyle = '#3e2723';
+    for(let y=0; y<512; y+=40) centers.forEach(x => ctx.fillRect(x - 50, y, 100, 10));
+    ctx.fillStyle = '#cfd8dc'; 
+    centers.forEach(x => { ctx.fillRect(x - 35, 0, 5, 512); ctx.fillRect(x + 27, 0, 5, 512); });
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
     tex.minFilter = THREE.LinearFilter;
     return tex;
 }
-const trackTexture = createTrackTexture();
 
-/* ================= INIT ================= */
 function startGame(){
   if(audioCtx.state === 'suspended') audioCtx.resume();
   document.getElementById("menu").style.display="none";
@@ -261,16 +198,23 @@ function startGame(){
   let c=3; cd.innerText=c;
   let t=setInterval(()=>{
     c--;
-    if(c>0) cd.innerText=c;
-    else if(c==0) cd.innerText="GO!";
-    else{
-      clearInterval(t); cd.style.display="none"; countingDown=false; started=true;
+    if(c>0) {
+      cd.innerText=c;
+    } else if(c==0) {
+      cd.innerText="GO!";
+    } else{
+      clearInterval(t); 
+      cd.style.display="none"; 
+      countingDown=false; 
+      started=true;
+      document.getElementById("scoreContainer").style.display = "block";
       startFunMusic();
     }
   },700);
 }
 
 function gameOver(){
+  if (!started) return;
   started = false;
   playHitSound();
   stopFunMusic();
@@ -284,49 +228,36 @@ animate();
 
 function init(){
   scene = new THREE.Scene();
-  const skyColor = 0xffc0cb; 
-  scene.background = new THREE.Color(skyColor);
-  scene.fog = new THREE.Fog(skyColor, 20, 90);
+  scene.background = new THREE.Color(0x87CEEB);
+  scene.fog = new THREE.Fog(0x87CEEB, 20, 90);
 
   camera = new THREE.PerspectiveCamera(65, innerWidth/innerHeight, 0.1, 1000);
   camera.position.set(0, 5, 11);
-  camera.rotation.x = -0.2;
+  camera.rotation.x = -0.25;
 
-  // OPTIMIZATION: High Performance Mode
-  renderer = new THREE.WebGLRenderer({antialias:true, powerPreference: "high-performance"});
-  
-  // OPTIMIZATION: Cap Pixel Ratio to 2 (Fixes lag on High DPI phones)
+  renderer = new THREE.WebGLRenderer({antialias:true});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer, nicer shadows
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
 
-  const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffb6c1, 0.8);
+  const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.8);
   scene.add(hemiLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffd54f, 1.2); 
-  dirLight.position.set(20, 50, 20);
+  const dirLight = new THREE.DirectionalLight(0xffd54f, 1.4); 
+  dirLight.position.set(30, 60, 20);
   dirLight.castShadow = true;
-  // Optimized Shadow Camera
-  dirLight.shadow.mapSize.width = 1024;
-  dirLight.shadow.mapSize.height = 1024;
-  dirLight.shadow.camera.left = -20;
-  dirLight.shadow.camera.right = 20;
-  dirLight.shadow.camera.top = 20;
-  dirLight.shadow.camera.bottom = -20;
+  dirLight.shadow.mapSize.set(2048, 2048);
+  dirLight.shadow.camera.left = -20; dirLight.shadow.camera.right = 20;
+  dirLight.shadow.camera.top = 20; dirLight.shadow.camera.bottom = -20;
   scene.add(dirLight);
 
-  createPlayer();
+  createRealPlayer();
   createRoad();
   createBuildings();
-
-  setInterval(spawnObstacle, 500);
   setupControls();
   
-  // Handle resize to prevent distortion
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -334,56 +265,94 @@ function init(){
   });
 }
 
-function createPlayer(){
-  const group = new THREE.Group();
-  
-  // Body
-  const bodyGeo = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
-  const bodyMat = new THREE.MeshToonMaterial({color: 0x00e676}); 
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 0.5;
-  
-  // Head
-  const headGeo = new THREE.SphereGeometry(0.4, 16, 16);
-  const headMat = new THREE.MeshToonMaterial({color: 0xffcc80});
-  const head = new THREE.Mesh(headGeo, headMat);
-  head.position.y = 1.4;
+function createRealPlayer(){
+  player = new THREE.Group();
+  player.position.set(0,0,0);
 
-  // Cap
-  const capGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.2, 16);
-  const capMat = new THREE.MeshStandardMaterial({color: 0xff4081}); 
-  const cap = new THREE.Mesh(capGeo, capMat);
-  cap.position.y = 1.6;
-  cap.rotation.x = -0.1;
-  
-  group.add(body); group.add(head); group.add(cap);
-  group.position.set(0,1.5,0);
-  
-  const shadowGeo = new THREE.CircleGeometry(0.6, 16);
-  const shadowMat = new THREE.MeshBasicMaterial({color:0x000000, opacity:0.3, transparent:true});
+  const skinMat = new THREE.MeshLambertMaterial({color: 0xffcc80});
+  const jacketMat = new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.6}); 
+  const jeansMat = new THREE.MeshStandardMaterial({color: 0x1565c0, roughness: 0.8}); 
+  const hairMat = new THREE.MeshStandardMaterial({color: 0x3e2723, roughness: 0.9});
+  const shoeMat = new THREE.MeshStandardMaterial({color: 0xffffff});
+
+  const torsoGeo = new THREE.CylinderGeometry(0.28, 0.22, 0.7, 12);
+  const torso = new THREE.Mesh(torsoGeo, jacketMat);
+  torso.position.y = 1.3;
+  torso.castShadow = true;
+  player.add(torso);
+  playerParts.torso = torso;
+
+  const headGeo = new THREE.SphereGeometry(0.25, 16, 16);
+  const head = new THREE.Mesh(headGeo, skinMat);
+  head.position.y = 0.55;
+  torso.add(head);
+
+  const hair1 = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 16, 0, 6.3, 0, 1.5), hairMat);
+  hair1.rotation.x = -0.2;
+  hair1.position.y = 0.05;
+  head.add(hair1);
+  const hairTop = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.2, 4, 8), hairMat);
+  hairTop.position.set(0, 0.25, 0.05);
+  hairTop.rotation.x = -0.3;
+  head.add(hairTop);
+
+  function createLimb(r, len, mat, x, y, z) {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, y, z);
+    const geo = new THREE.CapsuleGeometry(r, len, 4, 8);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.y = -len/2 - r; 
+    mesh.castShadow = true;
+    pivot.add(mesh);
+    return { pivot, mesh };
+  }
+
+  const lArm = createLimb(0.09, 0.5, jacketMat, -0.35, 0.3, 0);
+  torso.add(lArm.pivot);
+  playerParts.leftArm = lArm.pivot;
+
+  const rArm = createLimb(0.09, 0.5, jacketMat, 0.35, 0.3, 0);
+  torso.add(rArm.pivot);
+  playerParts.rightArm = rArm.pivot;
+
+  const lLeg = createLimb(0.11, 0.6, jeansMat, -0.15, -0.35, 0);
+  torso.add(lLeg.pivot);
+  playerParts.leftLeg = lLeg.pivot;
+  const lShoe = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.25), shoeMat);
+  lShoe.position.set(0, -0.45, 0.08);
+  lLeg.mesh.add(lShoe);
+
+  const rLeg = createLimb(0.11, 0.6, jeansMat, 0.15, -0.35, 0);
+  torso.add(rLeg.pivot);
+  playerParts.rightLeg = rLeg.pivot;
+  const rShoe = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.25), shoeMat);
+  rShoe.position.set(0, -0.45, 0.08);
+  rLeg.mesh.add(rShoe);
+
+  const shadowGeo = new THREE.CircleGeometry(0.5, 32);
+  const shadowMat = new THREE.MeshBasicMaterial({color:0x000000, opacity:0.4, transparent:true});
   const shadow = new THREE.Mesh(shadowGeo, shadowMat);
   shadow.rotation.x = -Math.PI/2;
-  shadow.position.y = -1.45; 
-  group.add(shadow);
+  shadow.position.y = 0.05;
+  player.add(shadow);
 
-  player = group;
   scene.add(player);
 }
 
 function createRoad(){
   const groundGeo = new THREE.PlaneGeometry(200, 300);
-  const groundMat = new THREE.MeshStandardMaterial({color: 0xeecfa1});
+  const groundMat = new THREE.MeshStandardMaterial({color: 0xd7ccc8});
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI/2;
   ground.position.y = -0.1;
   ground.position.z = -100;
   scene.add(ground);
 
-  // Reusable geometry for road segments
+  const tex = createTrackTexture();
   const roadGeo = new THREE.PlaneGeometry(12, 50);
-  const roadMat = new THREE.MeshStandardMaterial({ map: trackTexture });
+  const roadMat = new THREE.MeshStandardMaterial({ map: tex });
 
-  for(let i=0;i<8;i++){
+  for(let i=0;i<10;i++){
     const piece = new THREE.Mesh(roadGeo, roadMat);
     piece.rotation.x = -Math.PI/2;
     piece.position.z = -i*50;
@@ -394,21 +363,17 @@ function createRoad(){
 }
 
 function createBuildings(){
-  const palette = [0x4fc3f7, 0xff8a65, 0xba68c8, 0xffb74d, 0x81c784];
-  const materials = palette.map(c => new THREE.MeshToonMaterial({ color: c }));
-  const geom = new THREE.BoxGeometry(1,1,1); // Base geometry to be scaled
+  const colors = [0xffccbc, 0xc5cae9, 0xb2dfdb, 0xf0f4c3, 0xe1bee7];
+  const geom = new THREE.BoxGeometry(1,1,1);
+  const materials = colors.map(c => new THREE.MeshStandardMaterial({color: c}));
 
-  for(let i=0;i<50;i++){
-    const h = Math.random()*10 + 10;
-    const w = Math.random()*3 + 3;
+  for(let i=0;i<60;i++){
     const mat = materials[Math.floor(Math.random()*materials.length)];
-    
-    // Create mesh but re-use materials
     const b = new THREE.Mesh(geom, mat);
-    b.scale.set(w, h, w); // Scale instead of new Geometry
-    
-    const xPos = Math.random()>0.5 ? (9 + Math.random()*5) : (-9 - Math.random()*5);
-    b.position.set(xPos, h/2, -i*10);
+    const h = 10 + Math.random()*15;
+    const w = 3 + Math.random()*4;
+    b.scale.set(w, h, w);
+    b.position.set(Math.random()>0.5 ? 12+Math.random()*5 : -12-Math.random()*5, h/2, -i*8);
     b.castShadow = true;
     scene.add(b);
     buildings.push(b);
@@ -417,7 +382,7 @@ function createBuildings(){
 
 function setupControls(){
   let sx=0, sy=0;
-  window.addEventListener("touchstart",e=>{ sx=e.touches[0].clientX; sy=e.touches[0].clientY; }, {passive: false});
+  window.addEventListener("touchstart",e=>{ sx=e.touches[0].clientX; sy=e.touches[0].clientY; }, {passive:false});
   window.addEventListener("touchend",e=>{
     if(!started) return;
     let dx=e.changedTouches[0].clientX-sx;
@@ -428,112 +393,214 @@ function setupControls(){
       if(dy<-30){ jump(); playJumpSound(); }
       if(dy>30) fastFall=true;
     }
-  }, {passive: false});
+  }, {passive:false});
   window.addEventListener("keydown", e=>{
       if(!started) return;
-      if(e.key==="ArrowLeft") currentLane=Math.max(0,currentLane-1);
-      if(e.key==="ArrowRight") currentLane=Math.min(2,currentLane+1);
-      if(e.key==="ArrowUp") { jump(); playJumpSound(); }
-      if(e.key==="ArrowDown") fastFall=true;
+      switch(e.key) {
+        case "ArrowLeft": currentLane = Math.max(0, currentLane-1); break;
+        case "ArrowRight": currentLane = Math.min(2, currentLane+1); break;
+        case "ArrowUp": jump(); playJumpSound(); break;
+        case "ArrowDown": fastFall = true; break;
+        default: return;
+      }
   });
 }
 
 function jump(){
-  if(!jumping){ 
-    velY=0.48; 
-    jumping=true; 
-  }
+  if(!jumping){ velY=0.45; jumping=true; }
 }
 
 function spawnObstacle(){
   if(!started) return;
-  const type = Math.random(); 
-  const isTrain = type > 0.5;
-  let obs;
-  let yPos;
 
-  // OPTIMIZATION: Reusing Global Geometries & Materials
-  // This removes the "Garbage Collection" stutter
-  if(isTrain) {
-      const isBlue = Math.random() > 0.5;
-      obs = new THREE.Mesh(trainGeometry, isBlue ? matBlue : matRed);
+  // ===== UPDATED LOGIC (FROM 2nd CODE) =====
+  // Randomly select just ONE lane (instead of iterating all 3)
+  const i = Math.floor(Math.random() * 3);
+
+  // We keep the high-quality assets of Code 1 (Trains/Barriers)
+  // so the game doesn't look broken, but the spanning logic is now
+  // single-lane based like the 2nd code.
+  
+  const randType = Math.random();
+  let obs, yPos;
+  let isTrain = false;
+  let hasRamp = false;
+
+  // 35% Train, 35% Wood Barrier, 30% Yellow Barrier
+  if(randType < 0.35) {
+      isTrain = true;
+      obs = new THREE.Mesh(trainGeometry, Math.random()>0.5 ? matBlue : matRed);
       yPos = 1.5; 
-  } else {
+      
+      // Ramp Logic (on top of train)
+      if(Math.random() < 0.25) {
+          const ramp = new THREE.Mesh(rampBoxGeo, matRamp);
+          ramp.position.set(0, -0.6, 8.5); 
+          ramp.castShadow = true;
+          ramp.receiveShadow = true;
+          ramp.rotation.x = -0.1; 
+          obs.add(ramp);
+          hasRamp = true;
+      }
+
+      // Train Details
+      const l1 = new THREE.Mesh(lightGeometry, matLight);
+      l1.position.set(0.6, -0.5, 7); 
+      const l2 = l1.clone(); l2.position.set(-0.6, -0.5, 7);
+      obs.add(l1); obs.add(l2);
+      
+      const w1 = new THREE.Mesh(wheelGeometry, matWheel); 
+      w1.position.set(0, -1.5, 4); 
+      const w2 = w1.clone(); w2.position.set(0, -1.5, -4);
+      obs.add(w1); obs.add(w2);
+
+  } else if (randType < 0.70) {
+      // Wood Barrier
       obs = new THREE.Mesh(barrierGeometry, matBarrier);
+      yPos = 0.6;
+  } else {
+      // Yellow Barrier
+      obs = new THREE.Group();
+      const plank = new THREE.Mesh(yellowBarrierGeo, matYellow);
+      plank.position.y = 0.2; 
+      const foot1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.2, 0.4), matWheel);
+      foot1.position.set(-0.8, -0.1, 0);
+      const foot2 = foot1.clone();
+      foot2.position.set(0.8, -0.1, 0);
+      obs.add(plank); obs.add(foot1); obs.add(foot2);
       yPos = 0.6;
   }
 
-  const r = Math.random();
-  let pattern = [0,0,0];
-  if(r < 0.35) pattern[Math.floor(Math.random()*3)] = 1;
-  else if(r < 0.6) { pattern[currentLane] = 1; pattern[(currentLane+1)%3] = 1; }
-  else pattern[Math.floor(Math.random()*3)] = 1;
+  obs.position.set(lanes[i], yPos, -150 - (Math.random() * 5)); // Add slight Z-jitter
+  obs.castShadow = true;
+  obs.isTrain = isTrain;
+  if(hasRamp) obs.hasRamp = true; 
+  
+  scene.add(obs);
+  obstacles.push(obs);
 
-  pattern.forEach((v,i)=>{
-    if(v){
-      // Clone if we need multiple in one spawn (rare but safe here since geometry is shared)
-      const instance = obs.clone(); 
-      instance.position.set(lanes[i], yPos, -150);
-      instance.castShadow = true;
-      instance.isTrain = isTrain; 
-      scene.add(instance);
-      obstacles.push(instance);
-      
-      if(isTrain){
-          // Add details using shared geometries
-          const l1 = new THREE.Mesh(lightGeometry, matLight);
-          l1.position.set(0.6,-1,5);
-          const l2 = l1.clone(); l2.position.set(-0.6,-1,5);
-          instance.add(l1); instance.add(l2);
+  // Random Decorations (More frequent)
+  if(Math.random() < 0.5) {
+     const sidePole = new THREE.Group();
+     const poleMesh = new THREE.Mesh(poleGeo, matGrey);
+     poleMesh.position.y = 3.5;
+     const boxMesh = new THREE.Mesh(trafficBoxGeo, matWheel);
+     boxMesh.position.y = 6.5;
+     const lightMesh = new THREE.Mesh(new THREE.CircleGeometry(0.25, 16), new THREE.MeshBasicMaterial({color: Math.random()>0.5 ? 0x00ff00 : 0xff0000}));
+     lightMesh.position.set(0, 6.5, 0.26); 
 
-          const w1 = new THREE.Mesh(wheelGeometry, matWheel); w1.position.set(0, -1.5, 3);
-          const w2 = w1.clone(); w2.position.set(0, -1.5, -3);
-          instance.add(w1); instance.add(w2);
-      }
-    }
-  });
+     sidePole.add(poleMesh); sidePole.add(boxMesh); sidePole.add(lightMesh);
+     sidePole.position.set(Math.random()>0.5 ? 6 : -6, 0, -150);
+     scene.add(sidePole);
+     decorations.push(sidePole);
+  }
 }
 
 function animate(){
   requestAnimationFrame(animate);
-
-  if(!started||paused||countingDown){
-    renderer.render(scene,camera);
-    return;
+  if(!started || paused || countingDown){ 
+    renderer.render(scene,camera); 
+    return; 
   }
 
-  player.position.x += (lanes[currentLane]-player.position.x)*0.2;
-  player.rotation.z = (lanes[currentLane]-player.position.x) * -0.1;
-
-  let groundY = 1.5; 
+  // ANIMATION ACCUMULATOR
+  runAnimTime += worldSpeed * 0.6; 
   
-  obstacles.forEach(o=>{
-    let dx = Math.abs(o.position.x - player.position.x);
-    let dz = Math.abs(o.position.z - player.position.z); 
+  if (jumping) {
+    playerParts.leftLeg.rotation.x = -1.2;
+    playerParts.rightLeg.rotation.x = -0.8;
+    playerParts.leftArm.rotation.x = -2.5; 
+    playerParts.rightArm.rotation.x = -2.5;
+    playerParts.torso.position.y = 1.3;
+    playerParts.torso.rotation.x = 0;
+  } else {
+    // Running
+    const s = Math.sin(runAnimTime);
+    playerParts.leftLeg.rotation.x = s * 1.2; 
+    playerParts.rightLeg.rotation.x = -s * 1.2;
+    playerParts.leftArm.rotation.x = -s * 1.0;
+    playerParts.rightArm.rotation.x = s * 1.0;
+    playerParts.torso.position.y = 1.3 + Math.abs(Math.cos(runAnimTime)) * 0.1;
+    playerParts.torso.rotation.x = 0.2 + (worldSpeed * 0.1);
+  }
 
-    if(dx < 0.7) {
+  player.position.x += (lanes[currentLane]-player.position.x)*0.15;
+  player.rotation.z = (player.position.x - lanes[currentLane]) * 0.1;
+
+  // ===== UPDATED SPAWN LOGIC: SINGLE LANE RHYTHM =====
+  spawnAccumulator += worldSpeed; 
+  
+  if(spawnAccumulator > nextSpawnDistance) {
+      spawnObstacle();
+      spawnAccumulator = 0; 
+      
+      // Calculate next gap. Since we only spawn 1 object now (instead of up to 3),
+      // we make the gap slightly smaller to keep it engaging.
+      const baseGap = 15 / (worldSpeed * 0.8); 
+      const chaos = Math.random() * 10; 
+      nextSpawnDistance = baseGap + chaos;
+  }
+  // ==========================================
+
+  // Camera Shake Effect
+  let shakeX = 0, shakeY = 0;
+  if(worldSpeed > 1.2) {
+      const shakeIntensity = (worldSpeed - 1.2) * 0.15;
+      shakeX = (Math.random() - 0.5) * shakeIntensity;
+      shakeY = (Math.random() - 0.5) * shakeIntensity;
+  }
+
+  let onTrain = false;
+  let groundY = 0; 
+
+  for(let i=0; i<obstacles.length; i++){
+    const o = obstacles[i];
+    const dz = o.position.z - player.position.z;
+    const dx = Math.abs(o.position.x - player.position.x);
+
+    // Collision X width check
+    if(dx < 0.8) {
         if(o.isTrain) {
-            if(dz < 5.2) {
-                if(player.position.y >= 3.8) {
-                    groundY = 4.5; 
+            if(dz > -7 && dz < 7) {
+                if(player.position.y >= 2.8) {
+                    onTrain = true;
+                    groundY = 3.0; 
                 } else {
-                    gameOver();
+                    if(dz > 3.5 && dz < 6) { 
+                        gameOver(); 
+                        break; 
+                    }
                 }
             }
+            
+            if(o.hasRamp && dz >= 6 && dz < 10.5) {
+                if(player.position.y >= 1.6) {
+                    onTrain = true;
+                    groundY = 1.8; 
+                }
+            } else if (o.hasRamp && dz < 6 && dz > 3.5 && player.position.y < 1.6) {
+                gameOver();
+                break;
+            }
+
         } else {
-            if(dz < 0.8) {
-                if(player.position.y > 2.2) {
-                } else {
+            if(dz > -0.5 && dz < 0.5) {
+                if(player.position.y < 1.5) {
                     gameOver();
+                    break;
                 }
             }
         }
     }
-  });
+  }
+
+  if(!started){
+    renderer.render(scene, camera);
+    return;
+  }
 
   velY += gravity;
   if(fastFall) velY -= 0.08;
-
   player.position.y += velY;
 
   if(player.position.y <= groundY){
@@ -543,34 +610,42 @@ function animate(){
     fastFall = false;
   }
 
-  [...roadPieces,...buildings,...obstacles].forEach(o=>o.position.z+=worldSpeed);
+  // World Movement
+  [...roadPieces, ...buildings, ...obstacles, ...decorations].forEach(o=>o.position.z += worldSpeed);
 
-  roadPieces.forEach(p=>{ if(p.position.z>50) p.position.z -= 400; });
+  roadPieces.forEach(p=>{ if(p.position.z>50) p.position.z -= 500; });
   buildings.forEach(b=>{ 
       if(b.position.z>20) {
-          b.position.z -= 500;
-          b.position.x = Math.random()>0.5 ? (9 + Math.random()*5) : (-9 - Math.random()*5);
+          b.position.z -= 480;
+          b.position.x = Math.random()>0.5 ? 12+Math.random()*5 : -12-Math.random()*5;
       }
   });
-
+  
+  // Cleanup logic
   if(obstacles.length > 0 && obstacles[0].position.z > 20){
       scene.remove(obstacles[0]);
       obstacles.shift();
   }
 
-  camera.position.x += (player.position.x * 0.5 - camera.position.x) * 0.1;
-  camera.position.y = 5 + (player.position.y - 1.5) * 0.5; 
+  if(decorations.length > 0 && decorations[0].position.z > 20){
+      scene.remove(decorations[0]);
+      decorations.shift();
+  }
 
-  if(worldSpeed<maxSpeed) worldSpeed+=0.0003;
+  // Update Camera with Shake
+  camera.position.x += (player.position.x * 0.5 - camera.position.x) * 0.1 + shakeX;
+  camera.position.y = 5 + player.position.y * 0.3 + shakeY;
 
+  if(worldSpeed<maxSpeed) worldSpeed += 0.0003;
+  
   score++;
   if(score > highScore){ 
     highScore = score; 
-    localStorage.setItem("runnerHighScore", highScore); 
+    localStorage.setItem("runnerHighScore", highScore);
     document.getElementById("hiScoreVal").innerText = highScore;
   }
-  
   document.getElementById("score").innerText = score;
+  
   renderer.render(scene,camera);
 }
 </script>
