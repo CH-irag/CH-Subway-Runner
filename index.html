@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>CH Subway Runner - Pro Mode</title>
+  <title>CH Subway Runner - Optimized</title>
   <style>
     body { 
         margin:0; overflow:hidden; 
@@ -87,27 +87,29 @@ let scene, camera, renderer;
 let player, playerParts = {}; 
 
 /* ===== ASSETS ===== */
+// OPTIMIZATION: Use Lambert materials (faster) instead of Standard
 const trainGeometry = new THREE.BoxGeometry(2.6, 3.0, 14);
 const barrierGeometry = new THREE.BoxGeometry(2.2, 1.2, 0.4);
-const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 2.5, 16);
+// OPTIMIZATION: Reduced segments from 16 to 8
+const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 2.5, 8);
 const lightGeometry = new THREE.BoxGeometry(0.5, 0.2, 0.1);
 
 // Ramps and Boxes
 const yellowBarrierGeo = new THREE.BoxGeometry(2.2, 1.0, 0.3); 
-const poleGeo = new THREE.CylinderGeometry(0.15, 0.15, 7, 8); 
+// OPTIMIZATION: Reduced segments from 8 to 6
+const poleGeo = new THREE.CylinderGeometry(0.15, 0.15, 7, 6); 
 const trafficBoxGeo = new THREE.BoxGeometry(0.6, 1.2, 0.5); 
-// NEW: Slope Ramp Geometry instead of Box (INCREASED LENGTH FROM 9.0 TO 18.0)
 const rampSlopeGeo = new THREE.BoxGeometry(2.4, 0.2, 18.0); 
 
-// Materials
-const matBlue = new THREE.MeshStandardMaterial({color: 0x1565c0, roughness: 0.2}); 
-const matRed = new THREE.MeshStandardMaterial({color: 0xc62828, roughness: 0.2});
-const matBarrier = new THREE.MeshStandardMaterial({color: 0x8d6e63});
-const matWheel = new THREE.MeshStandardMaterial({color: 0x111111});
+// Materials - Switched to Lambert for performance on mobile
+const matBlue = new THREE.MeshLambertMaterial({color: 0x1565c0}); 
+const matRed = new THREE.MeshLambertMaterial({color: 0xc62828});
+const matBarrier = new THREE.MeshLambertMaterial({color: 0x8d6e63});
+const matWheel = new THREE.MeshLambertMaterial({color: 0x111111});
 const matLight = new THREE.MeshBasicMaterial({color: 0xffff00});
-const matYellow = new THREE.MeshStandardMaterial({color: 0xffea00}); 
-const matGrey = new THREE.MeshStandardMaterial({color: 0x607d8b});     
-const matRamp = new THREE.MeshStandardMaterial({color: 0x5d4037}); 
+const matYellow = new THREE.MeshLambertMaterial({color: 0xffea00}); 
+const matGrey = new THREE.MeshLambertMaterial({color: 0x607d8b});     
+const matRamp = new THREE.MeshLambertMaterial({color: 0x5d4037}); 
 
 wheelGeometry.rotateZ(Math.PI/2);
 
@@ -139,7 +141,6 @@ function startFunMusic(){
     playTone(melody[idx%melody.length], 0.15, "square", 0.05);
     if(idx%4===0) playTone(bassNotes[(idx/4)%bassNotes.length], 0.3, "triangle", 0.1);
     idx++;
-    // Music gets faster as world speed increases
     musicScheduler = setTimeout(loop, Math.max(100, 220 - (worldSpeed*60)));
   }
   loop();
@@ -166,7 +167,6 @@ let highScore = Number(localStorage.getItem("runnerHighScore")) || 0;
 document.getElementById("hiScoreVal").innerText = highScore;
 let started=false, paused=false, countingDown=false;
 
-// Animation & Spawning Control
 let runAnimTime = 0;
 let spawnAccumulator = 0; 
 let nextSpawnDistance = 50; 
@@ -174,16 +174,16 @@ let nextSpawnDistance = 50;
 /* ================= INIT ================= */
 function createTrackTexture() {
     const canvas = document.createElement('canvas');
-    canvas.width = 512; canvas.height = 512;
+    canvas.width = 256; canvas.height = 256; // Reduced texture size
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#6d4c41'; ctx.fillRect(0,0,512,512);
+    ctx.fillStyle = '#6d4c41'; ctx.fillRect(0,0,256,256);
     ctx.fillStyle = '#5d4037';
-    for(let i=0; i<1000; i++) ctx.fillRect(Math.random()*512, Math.random()*512, 3, 3);
-    const centers = [106, 256, 406]; 
+    for(let i=0; i<400; i++) ctx.fillRect(Math.random()*256, Math.random()*256, 3, 3);
+    const centers = [53, 128, 203]; 
     ctx.fillStyle = '#3e2723';
-    for(let y=0; y<512; y+=40) centers.forEach(x => ctx.fillRect(x - 50, y, 100, 10));
+    for(let y=0; y<256; y+=20) centers.forEach(x => ctx.fillRect(x - 25, y, 50, 5));
     ctx.fillStyle = '#cfd8dc'; 
-    centers.forEach(x => { ctx.fillRect(x - 35, 0, 5, 512); ctx.fillRect(x + 27, 0, 5, 512); });
+    centers.forEach(x => { ctx.fillRect(x - 17, 0, 3, 256); ctx.fillRect(x + 13, 0, 3, 256); });
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
     tex.minFilter = THREE.LinearFilter;
@@ -236,11 +236,16 @@ function init(){
   camera.position.set(0, 5, 11);
   camera.rotation.x = -0.25;
 
-  renderer = new THREE.WebGLRenderer({antialias:true});
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // OPTIMIZATION: Performance preference and BasicShadowMap
+  renderer = new THREE.WebGLRenderer({
+      antialias: true, // Keep edges smooth
+      powerPreference: "high-performance"
+  });
+  // OPTIMIZATION: Cap Pixel Ratio at 1.5. This is HUGE for lag reduction.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.BasicShadowMap; // Faster shadows
   document.body.appendChild(renderer.domElement);
 
   const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.8);
@@ -249,7 +254,8 @@ function init(){
   const dirLight = new THREE.DirectionalLight(0xffd54f, 1.4); 
   dirLight.position.set(30, 60, 20);
   dirLight.castShadow = true;
-  dirLight.shadow.mapSize.set(2048, 2048);
+  // OPTIMIZATION: Smaller shadow map size
+  dirLight.shadow.mapSize.set(1024, 1024);
   dirLight.shadow.camera.left = -20; dirLight.shadow.camera.right = 20;
   dirLight.shadow.camera.top = 20; dirLight.shadow.camera.bottom = -20;
   scene.add(dirLight);
@@ -270,29 +276,32 @@ function createRealPlayer(){
   player = new THREE.Group();
   player.position.set(0,0,0);
 
+  // OPTIMIZATION: Lambert materials
   const skinMat = new THREE.MeshLambertMaterial({color: 0xffcc80});
-  const jacketMat = new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.6}); 
-  const jeansMat = new THREE.MeshStandardMaterial({color: 0x1565c0, roughness: 0.8}); 
-  const hairMat = new THREE.MeshStandardMaterial({color: 0x3e2723, roughness: 0.9});
-  const shoeMat = new THREE.MeshStandardMaterial({color: 0xffffff});
+  const jacketMat = new THREE.MeshLambertMaterial({color: 0x111111}); 
+  const jeansMat = new THREE.MeshLambertMaterial({color: 0x1565c0}); 
+  const hairMat = new THREE.MeshLambertMaterial({color: 0x3e2723});
+  const shoeMat = new THREE.MeshLambertMaterial({color: 0xffffff});
 
-  const torsoGeo = new THREE.CylinderGeometry(0.28, 0.22, 0.7, 12);
+  // OPTIMIZATION: Reduced segments
+  const torsoGeo = new THREE.CylinderGeometry(0.28, 0.22, 0.7, 8);
   const torso = new THREE.Mesh(torsoGeo, jacketMat);
   torso.position.y = 1.3;
   torso.castShadow = true;
   player.add(torso);
   playerParts.torso = torso;
 
-  const headGeo = new THREE.SphereGeometry(0.25, 16, 16);
+  // OPTIMIZATION: Sphere 8x8 instead of 16x16
+  const headGeo = new THREE.SphereGeometry(0.25, 8, 8);
   const head = new THREE.Mesh(headGeo, skinMat);
   head.position.y = 0.55;
   torso.add(head);
 
-  const hair1 = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 16, 0, 6.3, 0, 1.5), hairMat);
+  const hair1 = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 8, 0, 6.3, 0, 1.5), hairMat);
   hair1.rotation.x = -0.2;
   hair1.position.y = 0.05;
   head.add(hair1);
-  const hairTop = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.2, 4, 8), hairMat);
+  const hairTop = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.2, 4, 4), hairMat);
   hairTop.position.set(0, 0.25, 0.05);
   hairTop.rotation.x = -0.3;
   head.add(hairTop);
@@ -300,7 +309,8 @@ function createRealPlayer(){
   function createLimb(r, len, mat, x, y, z) {
     const pivot = new THREE.Group();
     pivot.position.set(x, y, z);
-    const geo = new THREE.CapsuleGeometry(r, len, 4, 8);
+    // OPTIMIZATION: Capsule segments reduced
+    const geo = new THREE.CapsuleGeometry(r, len, 2, 6);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.y = -len/2 - r; 
     mesh.castShadow = true;
@@ -330,7 +340,7 @@ function createRealPlayer(){
   rShoe.position.set(0, -0.45, 0.08);
   rLeg.mesh.add(rShoe);
 
-  const shadowGeo = new THREE.CircleGeometry(0.5, 32);
+  const shadowGeo = new THREE.CircleGeometry(0.5, 12);
   const shadowMat = new THREE.MeshBasicMaterial({color:0x000000, opacity:0.4, transparent:true});
   const shadow = new THREE.Mesh(shadowGeo, shadowMat);
   shadow.rotation.x = -Math.PI/2;
@@ -342,7 +352,7 @@ function createRealPlayer(){
 
 function createRoad(){
   const groundGeo = new THREE.PlaneGeometry(200, 300);
-  const groundMat = new THREE.MeshStandardMaterial({color: 0xd7ccc8});
+  const groundMat = new THREE.MeshLambertMaterial({color: 0xd7ccc8});
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI/2;
   ground.position.y = -0.1;
@@ -351,7 +361,7 @@ function createRoad(){
 
   const tex = createTrackTexture();
   const roadGeo = new THREE.PlaneGeometry(12, 50);
-  const roadMat = new THREE.MeshStandardMaterial({ map: tex });
+  const roadMat = new THREE.MeshLambertMaterial({ map: tex });
 
   for(let i=0;i<10;i++){
     const piece = new THREE.Mesh(roadGeo, roadMat);
@@ -366,7 +376,8 @@ function createRoad(){
 function createBuildings(){
   const colors = [0xffccbc, 0xc5cae9, 0xb2dfdb, 0xf0f4c3, 0xe1bee7];
   const geom = new THREE.BoxGeometry(1,1,1);
-  const materials = colors.map(c => new THREE.MeshStandardMaterial({color: c}));
+  // OPTIMIZATION: Lambert
+  const materials = colors.map(c => new THREE.MeshLambertMaterial({color: c}));
 
   for(let i=0;i<60;i++){
     const mat = materials[Math.floor(Math.random()*materials.length)];
@@ -375,6 +386,7 @@ function createBuildings(){
     const w = 3 + Math.random()*4;
     b.scale.set(w, h, w);
     b.position.set(Math.random()>0.5 ? 12+Math.random()*5 : -12-Math.random()*5, h/2, -i*8);
+    // OPTIMIZATION: Only nearby buildings need shadows, but for simplicity/batching kept on, relies on shadow map optimization
     b.castShadow = true;
     scene.add(b);
     buildings.push(b);
@@ -426,24 +438,16 @@ function spawnObstacle(){
       obs = new THREE.Mesh(trainGeometry, Math.random()>0.5 ? matBlue : matRed);
       yPos = 1.5; 
       
-      // ===== NEW RAMP LOGIC =====
       if(Math.random() < 0.25) {
-          // Add a slope ramp connected to the front of the train
           const ramp = new THREE.Mesh(rampSlopeGeo, matRamp);
-          
-          // UPDATED: RAMP POSITION FOR SMOOTH CLIMB
-          // Train Center Z=0 (local). Train Extent is +/- 7. Front is +7 (towards camera).
-          // Ramp Length 18. Center is at +16 relative to train center.
-          // This makes the ramp go from Z=7 (train connection) to Z=25 (ground touch).
           ramp.position.set(0, 0.0, 16.0); 
-          ramp.rotation.x = 0.17; // Approx 10 degrees
+          ramp.rotation.x = 0.17; 
           
           ramp.castShadow = true;
           ramp.receiveShadow = true;
           obs.add(ramp);
           hasRamp = true;
       }
-      // ==========================
 
       const l1 = new THREE.Mesh(lightGeometry, matLight);
       l1.position.set(0.6, -0.5, 7); 
@@ -484,7 +488,8 @@ function spawnObstacle(){
      poleMesh.position.y = 3.5;
      const boxMesh = new THREE.Mesh(trafficBoxGeo, matWheel);
      boxMesh.position.y = 6.5;
-     const lightMesh = new THREE.Mesh(new THREE.CircleGeometry(0.25, 16), new THREE.MeshBasicMaterial({color: Math.random()>0.5 ? 0x00ff00 : 0xff0000}));
+     // OPTIMIZATION: Reduced circle segments
+     const lightMesh = new THREE.Mesh(new THREE.CircleGeometry(0.25, 8), new THREE.MeshBasicMaterial({color: Math.random()>0.5 ? 0x00ff00 : 0xff0000}));
      lightMesh.position.set(0, 6.5, 0.26); 
 
      sidePole.add(poleMesh); sidePole.add(boxMesh); sidePole.add(lightMesh);
@@ -543,43 +548,31 @@ function animate(){
   let onTrain = false;
   let groundY = 0; 
 
-  // ===== UPDATED COLLISION LOGIC FOR WHOLE TRAIN =====
   for(let i=0; i<obstacles.length; i++){
     const o = obstacles[i];
     
-    // We calculate position relative to the Obstacle Center.
-    // Objects generally move towards +Z. The "Front" (facing player) is +Z.
-    // Train Extent: [-7, 7]. Ramp Extent: [7, 25].
     const localZ = player.position.z - o.position.z; 
     const dx = Math.abs(o.position.x - player.position.x);
 
-    // X-Axis Collision Check
     if(dx < 0.9) { 
         if(o.isTrain) {
-            // Check if we are on the ramp section (between 7 and 25 relative Z)
             if (o.hasRamp && localZ > 7 && localZ <= 25) {
-                // We are on the ramp! Calculate height.
-                // At localZ = 25 (tip), height is 0.
-                // At localZ = 7 (top), height is 3.0.
                 const ratio = (25.0 - localZ) / 18.0; 
                 groundY = 3.0 * ratio;
                 onTrain = true;
                 
             } else if (localZ >= -7 && localZ <= 7) {
-                // We are on top of the train roof
                 groundY = 3.0;
                 onTrain = true;
                 
             } else if (!o.hasRamp && localZ > 7 && localZ < 8) {
-                // Hit the flat front face of a train with NO ramp
                 if (player.position.y < 2.5) {
                     gameOver();
                     break;
                 }
             }
         } else {
-            // Standard Barrier Logic (non-train)
-            const dz = o.position.z - player.position.z; // Revert to standard check for barrier
+            const dz = o.position.z - player.position.z; 
             if(dz > -0.5 && dz < 0.5) {
                 if(player.position.y < 1.5) {
                     gameOver();
@@ -589,7 +582,6 @@ function animate(){
         }
     }
   }
-  // =================================================
 
   if(!started){
     renderer.render(scene, camera);
@@ -600,8 +592,6 @@ function animate(){
   if(fastFall) velY -= 0.08;
   player.position.y += velY;
 
-  // Floor / Train collision correction
-  // If player is below calculated ground (ramp or roof), snap them up
   if(player.position.y <= groundY){
     player.position.y = groundY;
     velY = 0;
